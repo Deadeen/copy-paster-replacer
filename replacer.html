@@ -374,6 +374,8 @@
                 const allBlocks = document.querySelectorAll('.replacement-block');
                 if (allBlocks[allBlocks.length - 1].id === blockId) {
                     addBlock();
+                    // Auto-scroll this newly active block to the top of the view so the next one is visible
+                    block.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }
             } else {
                 block.style.backgroundColor = '#1e1e1e';
