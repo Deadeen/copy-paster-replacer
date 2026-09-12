@@ -41,7 +41,7 @@
             border-radius: 4px;
             cursor: pointer;
             font-weight: bold;
-            transition: background 0.2s;
+            transition: all 0.2s;
         }
         button:hover { background-color: var(--accent-hover); }
         .btn-danger { background-color: var(--danger-color); }
@@ -128,46 +128,92 @@
             overflow-wrap: normal;
             overflow-x: auto;
         }
+        
+        /* Fixed VS Code Editor & Scrollbar Styles */
         .preview-container {
             flex: 1;
             position: relative;
             display: flex;
             min-height: 0;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: #1e1e1e;
+            overflow: hidden;
         }
         .preview-box {
             flex: 1;
             width: 100%;
             height: 100%;
+            overflow: auto;
+            position: relative;
+        }
+        .preview-box::-webkit-scrollbar {
+            width: 14px;
+            height: 14px;
             background: #1e1e1e;
-            color: #d4d4d4;
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-            padding: 10px;
+            border-left: 1px solid #3e3e42;
+        }
+        .preview-box::-webkit-scrollbar-thumb {
+            background: #424242;
+            border: 2px solid #1e1e1e; 
+            border-radius: 7px;
+        }
+        .preview-box::-webkit-scrollbar-thumb:hover {
+            background: #4f4f4f;
+        }
+        .code-container {
+            position: relative;
+            min-width: 100%;
+            width: max-content;
+            min-height: max-content;
+        }
+        .code-layer {
             font-family: 'Consolas', 'Courier New', monospace;
             font-size: 14px;
+            line-height: 1.5;
+            white-space: pre !important;
+            word-wrap: normal !important;
+            tab-size: 4;
+            margin: 0;
+            padding: 15px; /* Unified padding in the layer to perfectly sync scroll/overlay */
             box-sizing: border-box;
-            white-space: pre;
-            overflow: auto;
-            resize: both;
-            max-width: 100%;
-            max-height: 100%;
+            display: block;
         }
+        #highlightLayer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 2;
+            color: transparent; 
+        }
+        #syntaxLayer {
+            position: relative;
+            z-index: 1;
+        }
+        /* Reset highlight.js background to stay clean */
+        .hljs { background: transparent !important; padding: 15px !important; }
+        
         .marker-track {
             position: absolute;
-            right: 20px;
-            top: 10px;
-            bottom: 10px;
-            width: 8px;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 14px;
             pointer-events: none;
             z-index: 10;
         }
         .scroll-marker {
             position: absolute;
-            right: 0;
-            width: 100%;
+            right: 2px;
+            width: 10px;
             height: 4px;
             border-radius: 2px;
+            box-shadow: 0 0 2px rgba(0,0,0,0.5);
         }
+        
         .status-log {
             margin-top: 10px;
             padding: 10px;
@@ -181,15 +227,22 @@
         .log-success { color: var(--success-color); }
         .log-error { color: var(--danger-color); }
     </style>
+    <!-- Add Highlight.js for VS Code Colors -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/vs2015.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 </head>
 <body>
 
     <h1>Batch Code Replacer</h1>
     
-    <div class="controls">
-        <button onclick="loadFile()" id="loadFileBtn">📂 Load File</button>
-        <button onclick="applyChanges()" class="btn-success">▶ Apply All Changes</button>
-        <button onclick="downloadFile()" id="downloadBtn" style="display: none;">⬇ Save File to Same Folder</button>
+    <div class="controls" style="margin-bottom: 10px;">
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+            <div style="display: flex; gap: 10px;">
+                <button onclick="loadFile()" id="loadFileBtn" title="Click to browse, or drag and drop a file here">📂 Load File (Click or Drag & Drop)</button>
+                <button onclick="applyChanges()" class="btn-success">▶ Apply All Changes</button>
+            </div>
+            <div id="fileLocation" style="font-size: 0.8rem; color: #888888; font-family: monospace; padding-left: 2px;"></div>
+        </div>
     </div>
 
     <div class="main-container">
@@ -197,16 +250,24 @@
             <div id="blocksContainer">
                 <!-- Replacement blocks will be injected here -->
             </div>
-            <button onclick="addBlock()" style="width: 100%; padding: 15px; background-color: #333; color: #ccc; border: 2px dashed #555; border-radius: 6px; font-size: 1.1rem; margin-bottom: 20px;">+ Add Additional Replacement Block</button>
         </div>
         
         <div class="right-panel">
             <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 5px;">
                 <label style="color: #9cdcfe;">File Preview (Read Only)</label>
-                <button onclick="copyWholeFile()" class="paste-btn" style="background-color: var(--accent-color); margin:0;">📋 Copy Entire File</button>
+                <div style="display: flex; gap: 10px;">
+                    <button onclick="downloadFile()" id="downloadBtn" class="paste-btn" style="display: none; background-color: #d1691f; margin:0; width: auto; padding: 4px 12px; font-size: 0.8rem; font-weight: bold;">⬇ Save File to Same Folder</button>
+                    <button onclick="copyWholeFile()" class="paste-btn" style="background-color: var(--accent-color); margin:0; width: auto; padding: 4px 12px; font-size: 0.8rem; font-weight: bold;">📋 Copy Entire File</button>
+                </div>
             </div>
             <div class="preview-container">
-                <div id="preview" class="preview-box">Upload a file to see its content here...</div>
+                <div id="previewBox" class="preview-box">
+                    <div class="code-container">
+                        <!-- Dual-layer text to allow flawless syntax highlighting AND chunk backgrounds -->
+                        <div id="highlightLayer" class="code-layer"></div>
+                        <code id="syntaxLayer" class="code-layer hljs">Upload a file to see its content here...</code>
+                    </div>
+                </div>
                 <div id="markerTrack" class="marker-track"></div>
             </div>
             <div id="statusLog" class="status-log">Status: Waiting for file...</div>
@@ -217,68 +278,65 @@
         let fileContent = "";
         let originalFileName = "updated_file.txt";
         let blockCount = 0;
-        let currentFileHandle = null; // Store handle so we can save back to exact folder
+        let currentFileHandle = null; 
         
         // Distinct colors for each chunk
         const chunkColors = ['#007acc', '#d1691f', '#2a9d8f', '#e76f51', '#9b5de5', '#f15bb5', '#00bbf9', '#00f5d4'];
 
-        // Normalize line endings to avoid invisible mismatch errors
         function normalizeText(text) {
             return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
         }
 
-        // Escapes HTML so code doesn't render as actual webpage elements in the preview
         function escapeHTML(str) {
             return str.replace(/[&<>'"]/g, tag => ({
                 '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
             }[tag] || tag));
         }
 
-        // Modern File API to Load File and remember its specific folder location
+        // Load file via Button Click
         async function loadFile() {
             try {
                 const [fileHandle] = await window.showOpenFilePicker();
-                currentFileHandle = fileHandle; // Save handle for later
+                currentFileHandle = fileHandle; 
                 const file = await fileHandle.getFile();
                 originalFileName = file.name;
                 fileContent = normalizeText(await file.text());
                 
+                document.getElementById('fileLocation').innerText = `Location: (Local File) / ${originalFileName}`;
                 updateHighlights(); 
                 logMsg(`Loaded file: ${originalFileName} (${fileContent.split('\n').length} lines)`, 'log-success');
                 document.getElementById('downloadBtn').style.display = 'inline-block';
             } catch (err) {
-                // User cancelled the file picker
                 if (err.name !== 'AbortError') logMsg('Error loading file.', 'log-error');
             }
         }
 
-        // Add a new Search/Replace Block with Colors and Paste Buttons
+        // Add a new Search/Replace Block 
         function addBlock() {
             blockCount++;
             const blockId = `block-${blockCount}`;
             const color = chunkColors[(blockCount - 1) % chunkColors.length];
-            const activeBgColor = color + '1A'; 
+            const activeBgColor = color + '40'; 
             
-            // Initial faded/black state
             const defaultBgColor = '#1e1e1e';
             const defaultBorderColor = '#3e3e42';
             const defaultTextColor = '#888888';
             
             const html = `
-                <div class="replacement-block" id="${blockId}" data-color="${color}" data-active-bg="${activeBgColor}" style="background-color: ${defaultBgColor}; border-left: 6px solid ${defaultBorderColor}; transition: all 0.3s;">
+                <div class="replacement-block" id="${blockId}" data-color="${color}" data-active-bg="${activeBgColor}" style="background-color: ${defaultBgColor}; border-left: 6px solid ${defaultBorderColor}; transition: all 0.3s; opacity: 0.6;">
                     <div class="block-header">
                         <span class="chunk-title" style="color: ${defaultTextColor}; font-size: 1.1em; transition: color 0.3s;">Update Chunk #${blockCount}</span>
-                        <button class="btn-danger" onclick="removeBlock('${blockId}')">Remove</button>
+                        <button class="btn-danger remove-btn" onclick="removeBlock('${blockId}')" style="opacity: 0.3; transition: opacity 0.3s;">Remove</button>
                     </div>
                     <div class="textareas">
                         <div class="textarea-container">
                             <label>Find Code:</label>
-                            <button class="paste-btn" onclick="pasteClipboard(this.nextElementSibling, '${blockId}')" style="background-color: #333333; color: #888888;">📋 Paste Clipboard Here</button>
+                            <button class="paste-btn find-paste-btn" onclick="pasteClipboard(this.nextElementSibling, '${blockId}')" style="background-color: #333333; color: #888888; opacity: 0.5;">📋 Paste Clipboard Here</button>
                             <textarea class="find-text" placeholder="Paste the old code here..." oninput="updateBlockState('${blockId}'); updateHighlights();"></textarea>
                         </div>
                         <div class="textarea-container">
                             <label>Replace With:</label>
-                            <button class="paste-btn" onclick="pasteClipboard(this.nextElementSibling, '${blockId}')" style="background-color: #333333; color: #888888;">📋 Paste Clipboard Here</button>
+                            <button class="paste-btn replace-paste-btn" onclick="pasteClipboard(this.nextElementSibling, '${blockId}')" style="background-color: #333333; color: #888888; opacity: 0.5;">📋 Paste Clipboard Here</button>
                             <textarea class="replace-text" placeholder="Paste the updated code here..." oninput="updateBlockState('${blockId}');"></textarea>
                         </div>
                     </div>
@@ -288,7 +346,7 @@
             document.getElementById('blocksContainer').insertAdjacentHTML('beforeend', html);
         }
 
-        // Dynamically activate color when text is entered
+        // Dynamically activate color and fade when text is entered, and spawn next block
         function updateBlockState(blockId) {
             const block = document.getElementById(blockId);
             if (!block) return;
@@ -298,24 +356,52 @@
             const activeBg = block.dataset.activeBg;
             
             const title = block.querySelector('.chunk-title');
-            const pasteBtns = block.querySelectorAll('.paste-btn');
+            const findPasteBtn = block.querySelector('.find-paste-btn');
+            const replacePasteBtn = block.querySelector('.replace-paste-btn');
+            const removeBtn = block.querySelector('.remove-btn');
             
-            if (findText.length > 0 || replaceText.length > 0) {
+            const hasAnyText = findText.length > 0 || replaceText.length > 0;
+            
+            // Chunk overall state (Un-fade the chunk block itself)
+            if (hasAnyText) {
                 block.style.backgroundColor = activeBg;
                 block.style.borderLeft = `6px solid ${color}`;
+                block.style.opacity = '1';
                 title.style.color = color;
-                pasteBtns.forEach(btn => {
-                    btn.style.backgroundColor = color;
-                    btn.style.color = "white";
-                });
+                removeBtn.style.opacity = '1';
+                
+                // Auto-spawn logic: If this is the very last block and we just started typing in it, spawn a new faded one below it
+                const allBlocks = document.querySelectorAll('.replacement-block');
+                if (allBlocks[allBlocks.length - 1].id === blockId) {
+                    addBlock();
+                }
             } else {
                 block.style.backgroundColor = '#1e1e1e';
                 block.style.borderLeft = '6px solid #3e3e42';
+                block.style.opacity = '0.6';
                 title.style.color = '#888888';
-                pasteBtns.forEach(btn => {
-                    btn.style.backgroundColor = '#333333';
-                    btn.style.color = '#888888';
-                });
+                removeBtn.style.opacity = '0.3';
+            }
+
+            // Independent button states (Faded until their specific text box has content)
+            if (findText.length > 0) {
+                findPasteBtn.style.backgroundColor = color;
+                findPasteBtn.style.color = "white";
+                findPasteBtn.style.opacity = "1";
+            } else {
+                findPasteBtn.style.backgroundColor = '#333333';
+                findPasteBtn.style.color = '#888888';
+                findPasteBtn.style.opacity = "0.5";
+            }
+
+            if (replaceText.length > 0) {
+                replacePasteBtn.style.backgroundColor = color;
+                replacePasteBtn.style.color = "white";
+                replacePasteBtn.style.opacity = "1";
+            } else {
+                replacePasteBtn.style.backgroundColor = '#333333';
+                replacePasteBtn.style.color = '#888888';
+                replacePasteBtn.style.opacity = "0.5";
             }
         }
 
@@ -335,41 +421,50 @@
             }
         }
 
-        // Live real-time highlighting logic & Scrollbar markers
+        // Dual-Layer VS Code Editor Highlights & Scrollbar Markers
         function updateHighlights() {
-            const previewEl = document.getElementById('preview');
+            const syntaxEl = document.getElementById('syntaxLayer');
+            const highlightEl = document.getElementById('highlightLayer');
             const trackEl = document.getElementById('markerTrack');
-            trackEl.innerHTML = ''; // Clear old markers
+            trackEl.innerHTML = ''; 
 
             if (!fileContent) {
-                previewEl.innerHTML = "Upload a file to see its content here...";
+                syntaxEl.textContent = "Upload a file to see its content here...";
+                highlightEl.innerHTML = "";
                 return;
             }
             
+            // 1. Process VS Code Syntax Highlighting (Base Layer)
+            syntaxEl.textContent = fileContent;
+            syntaxEl.className = "code-layer hljs"; // Reset classes so Highlight.js re-evaluates
+            if (typeof hljs !== 'undefined') hljs.highlightElement(syntaxEl);
+
+            // 2. Process Chunk Colors (Overlay Layer)
             let displayContent = escapeHTML(fileContent);
             const blocks = document.querySelectorAll('.replacement-block');
             
             blocks.forEach((block) => {
                 const findText = normalizeText(block.querySelector('.find-text').value);
                 const color = block.dataset.color;
+                const markBg = color + '66'; // High visibility tint for exact text match in editor
                 
                 if (findText.trim().length > 0) {
                     const escapedFindText = escapeHTML(findText);
-                    // Wrap found text in a styled <mark> tag using the chunk's color
-                    displayContent = displayContent.split(escapedFindText).join(`<mark style="background-color: ${color}; color: white;">${escapedFindText}</mark>`);
+                    // Overlay text is totally transparent, leaving only the perfect chunk background colors visible over the syntax highlighted text beneath it.
+                    displayContent = displayContent.split(escapedFindText).join(`<mark data-color="${color}" style="background-color: ${markBg}; color: transparent;">${escapedFindText}</mark>`);
                 }
             });
             
-            previewEl.innerHTML = displayContent;
+            highlightEl.innerHTML = displayContent;
 
-            // Generate Scrollbar Markers
-            const marks = previewEl.querySelectorAll('mark');
+            // Generate Scrollbar Markers exactly inside the track
+            const marks = highlightEl.querySelectorAll('mark');
             marks.forEach(mark => {
-                const ratio = mark.offsetTop / previewEl.scrollHeight;
+                const ratio = mark.offsetTop / highlightEl.scrollHeight;
                 const marker = document.createElement('div');
                 marker.className = 'scroll-marker';
                 marker.style.top = (ratio * 100) + '%';
-                marker.style.backgroundColor = mark.style.backgroundColor;
+                marker.style.backgroundColor = mark.dataset.color;
                 trackEl.appendChild(marker);
             });
         }
@@ -401,7 +496,6 @@
                 const replaceText = normalizeText(block.querySelector('.replace-text').value);
                 const statusDiv = block.querySelector('.block-status');
 
-                // Completely ignore if both fields are empty
                 if (!findText && !replaceText) {
                     statusDiv.innerHTML = `<span style="color: #888888;">Ignored: Chunk is empty.</span>`;
                     logMsg(`Chunk #${index + 1} is empty, ignored.`);
@@ -441,7 +535,6 @@
                 const options = {
                     suggestedName: originalFileName,
                 };
-                // If we loaded via the file picker, we can tell the save dialog to start in that EXACT directory
                 if (currentFileHandle) {
                     options.startIn = currentFileHandle;
                 }
@@ -452,7 +545,6 @@
                 logMsg('File saved exactly in directory!', 'log-success');
             } catch (err) {
                 if (err.name !== 'AbortError') {
-                    // Fallback for older browsers
                     const blob = new Blob([fileContent], { type: "text/plain" });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");
@@ -480,7 +572,6 @@
             }
         }
 
-        // Logging utility
         function logMsg(msg, className = '') {
             const logDiv = document.getElementById('statusLog');
             logDiv.innerHTML += `<div class="${className}">${msg}</div>`;
@@ -491,11 +582,39 @@
             document.getElementById('statusLog').innerHTML = '';
         }
 
-        // Initialize with 10 blocks
+        // Initialize App & Setup Drag-and-Drop
         window.onload = function() {
-            for (let i = 0; i < 10; i++) {
-                addBlock();
-            }
+            // Only add 1 faded chunk initially, it will auto-spawn more when typed in
+            addBlock();
+
+            // Drag and Drop Load Listeners
+            const loadBtn = document.getElementById('loadFileBtn');
+            loadBtn.addEventListener('dragover', (e) => { 
+                e.preventDefault(); 
+                loadBtn.style.transform = 'scale(1.05)'; 
+                loadBtn.style.border = '2px dashed #fff'; 
+            });
+            loadBtn.addEventListener('dragleave', (e) => { 
+                e.preventDefault(); 
+                loadBtn.style.transform = 'none'; 
+                loadBtn.style.border = 'none'; 
+            });
+            loadBtn.addEventListener('drop', async (e) => {
+                e.preventDefault();
+                loadBtn.style.transform = 'none';
+                loadBtn.style.border = 'none';
+                if (e.dataTransfer.files.length > 0) {
+                    const file = e.dataTransfer.files[0];
+                    originalFileName = file.name;
+                    fileContent = normalizeText(await file.text());
+                    currentFileHandle = null; // Can't map handles strictly from drag events yet
+                    
+                    document.getElementById('fileLocation').innerText = `Location: (Drag & Drop) / ${originalFileName}`;
+                    updateHighlights(); 
+                    logMsg(`Loaded via Drag & Drop: ${originalFileName} (${fileContent.split('\n').length} lines)`, 'log-success');
+                    document.getElementById('downloadBtn').style.display = 'inline-block';
+                }
+            });
         };
     </script>
 </body>
