@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Batch Code Replacer</title>
+    <style>
+        :root {
+            --bg-color: #1e1e1e;
+            --panel-bg: #252526;
+            --text-color: #d4d4d4;
+            --accent-color: #007acc;
+            --accent-hover: #005f9e;
+            --danger-color: #f14c4c;
+            --success-color: #89d185;
+            --border-color: #3e3e42;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+        h1 { margin-top: 0; font-size: 1.5rem; }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+        input[type="file"] {
+            background: var(--panel-bg);
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-color);
+        }
+        button {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        button:hover { background-color: var(--accent-hover); }
+        .btn-danger { background-color: var(--danger-color); }
+        .btn-danger:hover { background-color: #c93c3c; }
+        .btn-success { background-color: var(--success-color); color: #1e1e1e; }
+        
+        .main-container {
+            display: flex;
+            gap: 20px;
+            flex: 1;
+            min-height: 0;
+        }
+        .left-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            padding-right: 10px;
+        }
+        .right-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .replacement-block {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .block-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: bold;
+        }
+        .textareas {
+            display: flex;
+            gap: 10px;
+        }
+        .textarea-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .textarea-container label {
+            margin-bottom: 5px;
+            font-size: 0.85rem;
+            color: #9cdcfe;
+        }
+        textarea {
+            width: 100%;
+            height: 150px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 10px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 14px;
+            resize: vertical;
+            box-sizing: border-box;
+            white-space: pre;
+            overflow-wrap: normal;
+            overflow-x: auto;
+        }
+        #preview {
+            flex: 1;
+            height: 100%;
+        }
+        .status-log {
+            margin-top: 10px;
+            padding: 10px;
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-family: monospace;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+        .log-success { color: var(--success-color); }
+        .log-error { color: var(--danger-color); }
+    </style>
+</head>
+<body>
+
+    <h1>Batch Code Replacer</h1>
+    
+    <div class="controls">
+        <input type="file" id="fileInput">
+        <button onclick="addBlock()">+ Add Replacement Block</button>
+        <button onclick="applyChanges()" class="btn-success">▶ Apply All Changes</button>
+        <button onclick="downloadFile()" id="downloadBtn" style="display: none;">⬇ Download Updated File</button>
+    </div>
+
+    <div class="main-container">
+        <div class="left-panel" id="blocksContainer">
+            <!-- Replacement blocks will be injected here -->
+        </div>
+        
+        <div class="right-panel">
+            <label style="margin-bottom: 5px; color: #9cdcfe;">File Preview (Read Only)</label>
+            <textarea id="preview" readonly placeholder="Upload a file to see its content here..."></textarea>
+            <div id="statusLog" class="status-log">Status: Waiting for file...</div>
+        </div>
+    </div>
+
+    <script>
+        let fileContent = "";
+        let originalFileName = "updated_file.txt";
+        let blockCount = 0;
+
+        // Normalize line endings to avoid invisible mismatch errors
+        function normalizeText(text) {
+            return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        }
+
+        // Handle File Upload
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            originalFileName = file.name;
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                fileContent = normalizeText(e.target.result);
+                document.getElementById('preview').value = fileContent;
+                logMsg(`Loaded file: ${originalFileName} (${fileContent.split('\n').length} lines)`, 'log-success');
+                document.getElementById('downloadBtn').style.display = 'inline-block';
+            };
+            
+            reader.readAsText(file);
+        });
+
+        // Add a new Search/Replace Block
+        function addBlock() {
+            blockCount++;
+            const blockId = `block-${blockCount}`;
+            const html = `
+                <div class="replacement-block" id="${blockId}">
+                    <div class="block-header">
+                        <span>Update Chunk #${blockCount}</span>
+                        <button class="btn-danger" onclick="removeBlock('${blockId}')">Remove</button>
+                    </div>
+                    <div class="textareas">
+                        <div class="textarea-container">
+                            <label>Find Code (Copy exact block from original):</label>
+                            <textarea class="find-text" placeholder="Paste the old code here..."></textarea>
+                        </div>
+                        <div class="textarea-container">
+                            <label>Replace With (New code):</label>
+                            <textarea class="replace-text" placeholder="Paste the updated code here..."></textarea>
+                        </div>
+                    </div>
+                    <div class="block-status" style="font-size: 0.85em; margin-top: 5px;"></div>
+                </div>
+            `;
+            document.getElementById('blocksContainer').insertAdjacentHTML('beforeend', html);
+        }
+
+        // Remove a block
+        function removeBlock(blockId) {
+            document.getElementById(blockId).remove();
+        }
+
+        // Apply all changes sequentially
+        function applyChanges() {
+            if (!fileContent) {
+                alert("Please upload a file first!");
+                return;
+            }
+
+            let updatedContent = fileContent;
+            const blocks = document.querySelectorAll('.replacement-block');
+            let successCount = 0;
+            let failCount = 0;
+            
+            clearLog();
+            logMsg("Applying changes...");
+
+            blocks.forEach((block, index) => {
+                const findText = normalizeText(block.querySelector('.find-text').value);
+                const replaceText = normalizeText(block.querySelector('.replace-text').value);
+                const statusDiv = block.querySelector('.block-status');
+
+                if (!findText) {
+                    statusDiv.innerHTML = `<span class="log-error">Skipped: Find field is empty.</span>`;
+                    return;
+                }
+
+                if (updatedContent.includes(findText)) {
+                    // Replace all exact instances of the block
+                    updatedContent = updatedContent.split(findText).join(replaceText);
+                    statusDiv.innerHTML = `<span class="log-success">✓ Successfully replaced in file.</span>`;
+                    successCount++;
+                    logMsg(`Chunk #${index + 1}: Replaced successfully.`, 'log-success');
+                } else {
+                    statusDiv.innerHTML = `<span class="log-error">✗ Not found in file. Check for extra spaces or missing lines.</span>`;
+                    failCount++;
+                    logMsg(`Chunk #${index + 1}: Search string not found!`, 'log-error');
+                }
+            });
+
+            // Update state and preview
+            fileContent = updatedContent;
+            document.getElementById('preview').value = fileContent;
+            logMsg(`Finished: ${successCount} applied, ${failCount} failed.`);
+        }
+
+        // Download the modified file
+        function downloadFile() {
+            if (!fileContent) return;
+            const blob = new Blob([fileContent], { type: "text/plain" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "updated_" + originalFileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // Logging utility
+        function logMsg(msg, className = '') {
+            const logDiv = document.getElementById('statusLog');
+            logDiv.innerHTML += `<div class="${className}">${msg}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('statusLog').innerHTML = '';
+        }
+
+        // Initialize with one block
+        window.onload = addBlock;
+    </script>
+</body>
+</html>
