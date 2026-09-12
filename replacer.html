@@ -471,6 +471,11 @@
 
         // Remove a block
         function removeBlock(blockId) {
+            const allBlocks = document.querySelectorAll('.replacement-block');
+            if (allBlocks.length <= 1) {
+                alert("You cannot remove the last remaining chunk. Simply delete its text to clear it.");
+                return;
+            }
             document.getElementById(blockId).remove();
             updateHighlights(); 
         }
