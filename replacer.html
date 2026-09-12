@@ -47,7 +47,18 @@
         .btn-danger { background-color: var(--danger-color); }
         .btn-danger:hover { background-color: #c93c3c; }
         .btn-success { background-color: var(--success-color); color: #1e1e1e; }
-        .paste-btn { padding: 4px 8px; font-size: 0.75rem; margin-bottom: 5px; border-radius: 3px; color: white; border: 1px solid #ffffff44;}
+        .paste-btn { 
+            width: 100%; 
+            padding: 10px; 
+            font-size: 1rem; 
+            margin-top: 5px; 
+            margin-bottom: 5px; 
+            border-radius: 4px; 
+            color: white; 
+            border: 1px solid #ffffff44;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
         .paste-btn:hover { filter: brightness(1.2); }
         
         .main-container {
@@ -177,14 +188,16 @@
     
     <div class="controls">
         <button onclick="loadFile()" id="loadFileBtn">📂 Load File</button>
-        <button onclick="addBlock()">+ Add Replacement Block</button>
         <button onclick="applyChanges()" class="btn-success">▶ Apply All Changes</button>
         <button onclick="downloadFile()" id="downloadBtn" style="display: none;">⬇ Save File to Same Folder</button>
     </div>
 
     <div class="main-container">
-        <div class="left-panel" id="blocksContainer">
-            <!-- Replacement blocks will be injected here -->
+        <div class="left-panel">
+            <div id="blocksContainer">
+                <!-- Replacement blocks will be injected here -->
+            </div>
+            <button onclick="addBlock()" style="width: 100%; padding: 15px; background-color: #333; color: #ccc; border: 2px dashed #555; border-radius: 6px; font-size: 1.1rem; margin-bottom: 20px;">+ Add Additional Replacement Block</button>
         </div>
         
         <div class="right-panel">
@@ -244,29 +257,29 @@
             blockCount++;
             const blockId = `block-${blockCount}`;
             const color = chunkColors[(blockCount - 1) % chunkColors.length];
-            // 1A adds roughly 10% opacity to the hex color for the background tint
-            const bgColor = color + '1A'; 
+            const activeBgColor = color + '1A'; 
+            
+            // Initial faded/black state
+            const defaultBgColor = '#1e1e1e';
+            const defaultBorderColor = '#3e3e42';
+            const defaultTextColor = '#888888';
             
             const html = `
-                <div class="replacement-block" id="${blockId}" data-color="${color}" style="background-color: ${bgColor}; border-left: 6px solid ${color};">
+                <div class="replacement-block" id="${blockId}" data-color="${color}" data-active-bg="${activeBgColor}" style="background-color: ${defaultBgColor}; border-left: 6px solid ${defaultBorderColor}; transition: all 0.3s;">
                     <div class="block-header">
-                        <span style="color: ${color}; font-size: 1.1em;">Update Chunk #${blockCount}</span>
+                        <span class="chunk-title" style="color: ${defaultTextColor}; font-size: 1.1em; transition: color 0.3s;">Update Chunk #${blockCount}</span>
                         <button class="btn-danger" onclick="removeBlock('${blockId}')">Remove</button>
                     </div>
                     <div class="textareas">
                         <div class="textarea-container">
-                            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
-                                <label>Find Code:</label>
-                                <button class="paste-btn" onclick="pasteClipboard(this.parentElement.nextElementSibling)" style="background-color: ${color}">📋 Paste Last</button>
-                            </div>
-                            <textarea class="find-text" placeholder="Paste the old code here..." oninput="updateHighlights()"></textarea>
+                            <label>Find Code:</label>
+                            <button class="paste-btn" onclick="pasteClipboard(this.nextElementSibling, '${blockId}')" style="background-color: #333333; color: #888888;">📋 Paste Clipboard Here</button>
+                            <textarea class="find-text" placeholder="Paste the old code here..." oninput="updateBlockState('${blockId}'); updateHighlights();"></textarea>
                         </div>
                         <div class="textarea-container">
-                            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
-                                <label>Replace With:</label>
-                                <button class="paste-btn" onclick="pasteClipboard(this.parentElement.nextElementSibling)" style="background-color: ${color}">📋 Paste Last</button>
-                            </div>
-                            <textarea class="replace-text" placeholder="Paste the updated code here..."></textarea>
+                            <label>Replace With:</label>
+                            <button class="paste-btn" onclick="pasteClipboard(this.nextElementSibling, '${blockId}')" style="background-color: #333333; color: #888888;">📋 Paste Clipboard Here</button>
+                            <textarea class="replace-text" placeholder="Paste the updated code here..." oninput="updateBlockState('${blockId}');"></textarea>
                         </div>
                     </div>
                     <div class="block-status" style="font-size: 0.85em; margin-top: 5px;"></div>
@@ -275,11 +288,43 @@
             document.getElementById('blocksContainer').insertAdjacentHTML('beforeend', html);
         }
 
+        // Dynamically activate color when text is entered
+        function updateBlockState(blockId) {
+            const block = document.getElementById(blockId);
+            if (!block) return;
+            const findText = block.querySelector('.find-text').value;
+            const replaceText = block.querySelector('.replace-text').value;
+            const color = block.dataset.color;
+            const activeBg = block.dataset.activeBg;
+            
+            const title = block.querySelector('.chunk-title');
+            const pasteBtns = block.querySelectorAll('.paste-btn');
+            
+            if (findText.length > 0 || replaceText.length > 0) {
+                block.style.backgroundColor = activeBg;
+                block.style.borderLeft = `6px solid ${color}`;
+                title.style.color = color;
+                pasteBtns.forEach(btn => {
+                    btn.style.backgroundColor = color;
+                    btn.style.color = "white";
+                });
+            } else {
+                block.style.backgroundColor = '#1e1e1e';
+                block.style.borderLeft = '6px solid #3e3e42';
+                title.style.color = '#888888';
+                pasteBtns.forEach(btn => {
+                    btn.style.backgroundColor = '#333333';
+                    btn.style.color = '#888888';
+                });
+            }
+        }
+
         // Paste from clipboard logic
-        async function pasteClipboard(targetTextarea) {
+        async function pasteClipboard(targetTextarea, blockId) {
             try {
                 const text = await navigator.clipboard.readText();
                 targetTextarea.value = text;
+                updateBlockState(blockId);
                 updateHighlights(); 
             } catch (err) {
                 if (window.location.protocol === 'file:') {
@@ -346,6 +391,7 @@
             const blocks = document.querySelectorAll('.replacement-block');
             let successCount = 0;
             let failCount = 0;
+            let ignoreCount = 0;
             
             clearLog();
             logMsg("Applying changes...");
@@ -355,8 +401,18 @@
                 const replaceText = normalizeText(block.querySelector('.replace-text').value);
                 const statusDiv = block.querySelector('.block-status');
 
+                // Completely ignore if both fields are empty
+                if (!findText && !replaceText) {
+                    statusDiv.innerHTML = `<span style="color: #888888;">Ignored: Chunk is empty.</span>`;
+                    logMsg(`Chunk #${index + 1} is empty, ignored.`);
+                    ignoreCount++;
+                    return;
+                }
+
                 if (!findText) {
                     statusDiv.innerHTML = `<span class="log-error">Skipped: Find field is empty.</span>`;
+                    failCount++;
+                    logMsg(`Chunk #${index + 1}: Find field empty, but replace has text!`, 'log-error');
                     return;
                 }
 
@@ -374,7 +430,7 @@
 
             fileContent = updatedContent;
             updateHighlights();
-            logMsg(`Finished: ${successCount} applied, ${failCount} failed.`);
+            logMsg(`Finished: ${successCount} applied, ${failCount} failed, ${ignoreCount} ignored.`);
         }
 
         // Download or Overwrite the modified file using File System Access API
@@ -435,8 +491,12 @@
             document.getElementById('statusLog').innerHTML = '';
         }
 
-        // Initialize with one block
-        window.onload = addBlock;
+        // Initialize with 10 blocks
+        window.onload = function() {
+            for (let i = 0; i < 10; i++) {
+                addBlock();
+            }
+        };
     </script>
 </body>
 </html>
