@@ -54,6 +54,8 @@
         .btn-danger { background-color: var(--danger-color); }
         .btn-danger:hover { background-color: #c93c3c; }
         .btn-success { background-color: var(--success-color); color: #1e1e1e; }
+        .paste-btn { padding: 4px 8px; font-size: 0.75rem; margin-bottom: 5px; border-radius: 3px; color: white; border: 1px solid #ffffff44;}
+        .paste-btn:hover { filter: brightness(1.2); }
         
         .main-container {
             display: flex;
@@ -100,7 +102,6 @@
             flex-direction: column;
         }
         .textarea-container label {
-            margin-bottom: 5px;
             font-size: 0.85rem;
             color: #9cdcfe;
         }
@@ -120,9 +121,20 @@
             overflow-wrap: normal;
             overflow-x: auto;
         }
-        #preview {
+        .preview-box {
             flex: 1;
+            width: 100%;
             height: 100%;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 10px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 14px;
+            box-sizing: border-box;
+            white-space: pre;
+            overflow: auto;
         }
         .status-log {
             margin-top: 10px;
@@ -156,7 +168,7 @@
         
         <div class="right-panel">
             <label style="margin-bottom: 5px; color: #9cdcfe;">File Preview (Read Only)</label>
-            <textarea id="preview" readonly placeholder="Upload a file to see its content here..."></textarea>
+            <div id="preview" class="preview-box">Upload a file to see its content here...</div>
             <div id="statusLog" class="status-log">Status: Waiting for file...</div>
         </div>
     </div>
@@ -165,10 +177,20 @@
         let fileContent = "";
         let originalFileName = "updated_file.txt";
         let blockCount = 0;
+        
+        // Distinct colors for each chunk
+        const chunkColors = ['#007acc', '#d1691f', '#2a9d8f', '#e76f51', '#9b5de5', '#f15bb5', '#00bbf9', '#00f5d4'];
 
         // Normalize line endings to avoid invisible mismatch errors
         function normalizeText(text) {
             return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        }
+
+        // Escapes HTML so code doesn't render as actual webpage elements in the preview
+        function escapeHTML(str) {
+            return str.replace(/[&<>'"]/g, tag => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+            }[tag] || tag));
         }
 
         // Handle File Upload
@@ -181,7 +203,7 @@
             
             reader.onload = function(e) {
                 fileContent = normalizeText(e.target.result);
-                document.getElementById('preview').value = fileContent;
+                updateHighlights(); // Render the preview with initial highlights
                 logMsg(`Loaded file: ${originalFileName} (${fileContent.split('\n').length} lines)`, 'log-success');
                 document.getElementById('downloadBtn').style.display = 'inline-block';
             };
@@ -189,23 +211,31 @@
             reader.readAsText(file);
         });
 
-        // Add a new Search/Replace Block
+        // Add a new Search/Replace Block with Colors and Paste Buttons
         function addBlock() {
             blockCount++;
             const blockId = `block-${blockCount}`;
+            const color = chunkColors[(blockCount - 1) % chunkColors.length];
+            
             const html = `
-                <div class="replacement-block" id="${blockId}">
+                <div class="replacement-block" id="${blockId}" data-color="${color}" style="border-left: 6px solid ${color};">
                     <div class="block-header">
-                        <span>Update Chunk #${blockCount}</span>
+                        <span style="color: ${color}; font-size: 1.1em;">Update Chunk #${blockCount}</span>
                         <button class="btn-danger" onclick="removeBlock('${blockId}')">Remove</button>
                     </div>
                     <div class="textareas">
                         <div class="textarea-container">
-                            <label>Find Code (Copy exact block from original):</label>
-                            <textarea class="find-text" placeholder="Paste the old code here..."></textarea>
+                            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+                                <label>Find Code:</label>
+                                <button class="paste-btn" onclick="pasteClipboard(this.parentElement.nextElementSibling)" style="background-color: ${color}">📋 Paste Last</button>
+                            </div>
+                            <textarea class="find-text" placeholder="Paste the old code here..." oninput="updateHighlights()"></textarea>
                         </div>
                         <div class="textarea-container">
-                            <label>Replace With (New code):</label>
+                            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+                                <label>Replace With:</label>
+                                <button class="paste-btn" onclick="pasteClipboard(this.parentElement.nextElementSibling)" style="background-color: ${color}">📋 Paste Last</button>
+                            </div>
                             <textarea class="replace-text" placeholder="Paste the updated code here..."></textarea>
                         </div>
                     </div>
@@ -215,9 +245,45 @@
             document.getElementById('blocksContainer').insertAdjacentHTML('beforeend', html);
         }
 
+        // Paste from clipboard logic
+        async function pasteClipboard(targetTextarea) {
+            try {
+                const text = await navigator.clipboard.readText();
+                targetTextarea.value = text;
+                updateHighlights(); // Trigger the highlight update automatically
+            } catch (err) {
+                alert('Clipboard access denied or empty. Please allow permissions or use Ctrl+V.');
+            }
+        }
+
+        // Live real-time highlighting logic
+        function updateHighlights() {
+            if (!fileContent) {
+                document.getElementById('preview').innerHTML = "Upload a file to see its content here...";
+                return;
+            }
+            
+            let displayContent = escapeHTML(fileContent);
+            const blocks = document.querySelectorAll('.replacement-block');
+            
+            blocks.forEach((block) => {
+                const findText = normalizeText(block.querySelector('.find-text').value);
+                const color = block.dataset.color;
+                
+                if (findText.trim().length > 0) {
+                    const escapedFindText = escapeHTML(findText);
+                    // Wrap found text in a styled <mark> tag using the chunk's color
+                    displayContent = displayContent.split(escapedFindText).join(`<mark style="background-color: ${color}; color: white;">${escapedFindText}</mark>`);
+                }
+            });
+            
+            document.getElementById('preview').innerHTML = displayContent;
+        }
+
         // Remove a block
         function removeBlock(blockId) {
             document.getElementById(blockId).remove();
+            updateHighlights(); // Refresh highlights after removal
         }
 
         // Apply all changes sequentially
@@ -260,22 +326,38 @@
 
             // Update state and preview
             fileContent = updatedContent;
-            document.getElementById('preview').value = fileContent;
+            updateHighlights();
             logMsg(`Finished: ${successCount} applied, ${failCount} failed.`);
         }
 
-        // Download the modified file
-        function downloadFile() {
+        // Download or Overwrite the modified file using File System Access API
+        async function downloadFile() {
             if (!fileContent) return;
-            const blob = new Blob([fileContent], { type: "text/plain" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = "updated_" + originalFileName;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            
+            try {
+                // This prompts a save window that defaults to opening in the exact same directory originally loaded (in modern browsers)
+                const options = {
+                    suggestedName: originalFileName,
+                };
+                const handle = await window.showSaveFilePicker(options);
+                const writable = await handle.createWritable();
+                await writable.write(fileContent);
+                await writable.close();
+                logMsg('File saved directly to folder!', 'log-success');
+            } catch (err) {
+                // If user clicks cancel or if using an older browser, fallback to standard download
+                if (err.name !== 'AbortError') {
+                    const blob = new Blob([fileContent], { type: "text/plain" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = originalFileName; // Same name so it overrides if prompted
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }
+            }
         }
 
         // Logging utility
