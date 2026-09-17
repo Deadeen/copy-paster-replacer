@@ -326,13 +326,17 @@
                 <div class="replacement-block" id="${blockId}" data-color="${color}" data-active-bg="${activeBgColor}" style="background-color: ${defaultBgColor}; border-left: 6px solid ${defaultBorderColor}; transition: all 0.3s; opacity: 0.6;">
                     <div class="block-header">
                         <span class="chunk-title" style="color: ${defaultTextColor}; font-size: 1.1em; transition: color 0.3s;">Update Chunk #${blockCount}</span>
-                        <button class="btn-danger remove-btn" onclick="removeBlock('${blockId}')" style="opacity: 0.3; transition: opacity 0.3s;">Remove</button>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span class="chunk-warnings" style="font-size: 0.85em; color: var(--danger-color); font-weight: normal; display: none;"></span>
+                            <span class="chunk-diff" style="font-size: 0.85em; color: #888888; font-weight: normal; display: none;"></span>
+                            <button class="btn-danger remove-btn" onclick="removeBlock('${blockId}')" style="opacity: 0.3; transition: opacity 0.3s;">Remove</button>
+                        </div>
                     </div>
                     <div class="textareas">
                         <div class="textarea-container">
                             <label>Find Code:</label>
                             <button class="paste-btn find-paste-btn" onclick="pasteClipboard(this.nextElementSibling, '${blockId}')" style="background-color: #333333; color: #888888; opacity: 0.5;">📋 Paste Clipboard Here</button>
-                            <textarea class="find-text" placeholder="Paste the old code here..." oninput="updateBlockState('${blockId}'); updateHighlights();"></textarea>
+                            <textarea class="find-text" placeholder="Paste the old code here..." oninput="updateBlockState('${blockId}'); updateHighlights('${blockId}');"></textarea>
                         </div>
                         <div class="textarea-container">
                             <label>Replace With:</label>
@@ -344,6 +348,20 @@
                 </div>
             `;
             document.getElementById('blocksContainer').insertAdjacentHTML('beforeend', html);
+        }
+
+        // Fast approximate diff calculation for performance
+        function calculateDiffPercentage(str1, str2) {
+            if (str1 === str2) return 0;
+            if (!str1 || !str2) return 100;
+            const arr1 = str1.split('\n');
+            const arr2 = str2.split('\n');
+            let diffs = 0;
+            const maxLen = Math.max(arr1.length, arr2.length);
+            for (let i = 0; i < maxLen; i++) {
+                if (arr1[i] !== arr2[i]) diffs++;
+            }
+            return Math.round((diffs / maxLen) * 100);
         }
 
         // Dynamically activate color and fade when text is entered, and spawn next block
@@ -359,8 +377,41 @@
             const findPasteBtn = block.querySelector('.find-paste-btn');
             const replacePasteBtn = block.querySelector('.replace-paste-btn');
             const removeBtn = block.querySelector('.remove-btn');
+            const diffSpan = block.querySelector('.chunk-diff');
+            const warnSpan = block.querySelector('.chunk-warnings');
             
             const hasAnyText = findText.length > 0 || replaceText.length > 0;
+
+            // Diff Calculation
+            if (findText && replaceText) {
+                const diffPct = calculateDiffPercentage(findText, replaceText);
+                diffSpan.style.display = 'inline';
+                if (diffPct === 0) {
+                    diffSpan.innerText = 'Identical';
+                    diffSpan.style.color = 'var(--success-color)';
+                } else {
+                    diffSpan.innerText = `${diffPct}% difference`;
+                    diffSpan.style.color = '#888888';
+                }
+            } else {
+                diffSpan.style.display = 'none';
+            }
+
+            // Duplicate Check
+            warnSpan.style.display = 'none';
+            if (findText) {
+                const allBlocks = document.querySelectorAll('.replacement-block');
+                for (let i = 0; i < allBlocks.length; i++) {
+                    if (allBlocks[i].id === blockId) break; // Stop checking at current block
+                    const prevFindText = allBlocks[i].querySelector('.find-text').value;
+                    if (findText === prevFindText && prevFindText.length > 0) {
+                        const prevTitle = allBlocks[i].querySelector('.chunk-title').innerText.replace('Update ', '').toLowerCase();
+                        warnSpan.innerText = `(same text already existed in ${prevTitle})`;
+                        warnSpan.style.display = 'inline';
+                        break;
+                    }
+                }
+            }
             
             // Chunk overall state (Un-fade the chunk block itself)
             if (hasAnyText) {
@@ -413,7 +464,7 @@
                 const text = await navigator.clipboard.readText();
                 targetTextarea.value = text;
                 updateBlockState(blockId);
-                updateHighlights(); 
+                updateHighlights(blockId); 
             } catch (err) {
                 if (window.location.protocol === 'file:') {
                     alert('Clipboard Prompt Blocked!\n\nBrowsers will not save clipboard permissions for local "file://" URLs. It will ask every single time.\n\nTO FIX THIS: Open this file in VS Code, right-click, and select "Open with Live Server". This runs it as an online file (http://127.0.0.1) and the browser will permanently save your permission.');
@@ -424,7 +475,7 @@
         }
 
         // Dual-Layer VS Code Editor Highlights & Scrollbar Markers
-        function updateHighlights() {
+        function updateHighlights(activeBlockId = null) {
             const syntaxEl = document.getElementById('syntaxLayer');
             const highlightEl = document.getElementById('highlightLayer');
             const trackEl = document.getElementById('markerTrack');
@@ -448,12 +499,13 @@
             blocks.forEach((block) => {
                 const findText = normalizeText(block.querySelector('.find-text').value);
                 const color = block.dataset.color;
+                const blockId = block.id; // Get exact block ID for auto-scrolling
                 const markBg = color + '66'; // High visibility tint for exact text match in editor
                 
                 if (findText.trim().length > 0) {
                     const escapedFindText = escapeHTML(findText);
                     // Overlay text is totally transparent, leaving only the perfect chunk background colors visible over the syntax highlighted text beneath it.
-                    displayContent = displayContent.split(escapedFindText).join(`<mark data-color="${color}" style="background-color: ${markBg}; color: transparent;">${escapedFindText}</mark>`);
+                    displayContent = displayContent.split(escapedFindText).join(`<mark data-color="${color}" data-block-id="${blockId}" style="background-color: ${markBg}; color: transparent;">${escapedFindText}</mark>`);
                 }
             });
             
@@ -469,6 +521,18 @@
                 marker.style.backgroundColor = mark.dataset.color;
                 trackEl.appendChild(marker);
             });
+
+            // Auto-scroll file preview to the newly updated/pasted chunk
+            if (activeBlockId) {
+                const activeMark = highlightEl.querySelector(`mark[data-block-id="${activeBlockId}"]`);
+                if (activeMark) {
+                    const previewBox = document.getElementById('previewBox');
+                    previewBox.scrollTo({
+                        top: activeMark.offsetTop - 50, // 50px buffer to keep it clearly visible below the top edge
+                        behavior: 'smooth'
+                    });
+                }
+            }
         }
 
         // Remove a block
