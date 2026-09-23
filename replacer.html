@@ -453,6 +453,7 @@
                     <div class="block-header">
                         <span class="chunk-title" style="color: ${defaultTextColor}; font-size: 1.1em; transition: color 0.3s;">Update Chunk #${blockCount}</span>
                         <div style="display: flex; align-items: center; gap: 10px;">
+                            <span class="chunk-found-status" style="font-size: 0.85em; font-weight: bold; display: none;"></span>
                             <span class="chunk-warnings" style="font-size: 0.85em; color: var(--danger-color); font-weight: normal; display: none;"></span>
                             <span class="chunk-diff" style="font-size: 0.85em; color: #888888; font-weight: normal; display: none;"></span>
                             <button class="btn-danger remove-btn" onclick="removeBlock('${blockId}')" style="opacity: 0.3; transition: opacity 0.3s;">Remove</button>
@@ -505,8 +506,36 @@
             const removeBtn = block.querySelector('.remove-btn');
             const diffSpan = block.querySelector('.chunk-diff');
             const warnSpan = block.querySelector('.chunk-warnings');
+            const foundSpan = block.querySelector('.chunk-found-status');
             
             const hasAnyText = findText.length > 0 || replaceText.length > 0;
+
+            // Existence Check and Auto-Switch File
+            if (foundSpan) foundSpan.style.display = 'none';
+            if (findText) {
+                let isFound = false;
+                if (isDirectoryMode) {
+                    if (fileContent && fileContent.includes(findText)) {
+                        isFound = true;
+                    } else {
+                        for (let i = 0; i < loadedDirectoryFiles.length; i++) {
+                            if (loadedDirectoryFiles[i].content.includes(findText)) {
+                                isFound = true;
+                                selectDirectoryFile(i); // Auto-switch to the file containing this text
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    isFound = fileContent && fileContent.includes(findText);
+                }
+                
+                if (foundSpan) {
+                    foundSpan.style.display = 'inline';
+                    foundSpan.innerText = isFound ? '✓ Found' : '✗ Not found';
+                    foundSpan.style.color = isFound ? 'var(--success-color)' : 'var(--danger-color)';
+                }
+            }
 
             // Diff Calculation
             if (findText && replaceText) {
