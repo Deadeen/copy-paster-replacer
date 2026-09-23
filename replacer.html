@@ -161,6 +161,37 @@
         .preview-box::-webkit-scrollbar-thumb:hover {
             background: #4f4f4f;
         }
+        .dir-files-pane {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 8px;
+            margin-bottom: 8px;
+            max-height: 140px;
+            overflow-y: auto;
+            display: none;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .dir-file-item {
+            padding: 5px 8px;
+            font-size: 0.85rem;
+            font-family: monospace;
+            cursor: pointer;
+            border-radius: 3px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #1e1e1e;
+            border: 1px solid #333;
+        }
+        .dir-file-item:hover {
+            border-color: var(--accent-color);
+        }
+        .dir-file-item.active {
+            border-color: var(--accent-color);
+            background: #2a2d2e;
+        }
         .code-container {
             position: relative;
             min-width: 100%;
@@ -239,6 +270,7 @@
         <div style="display: flex; flex-direction: column; gap: 5px;">
             <div style="display: flex; gap: 10px;">
                 <button onclick="loadFile()" id="loadFileBtn" title="Click to browse, or drag and drop a file here">📂 Load File (Click or Drag & Drop)</button>
+                <button onclick="loadDirectory()" id="loadDirBtn" style="background-color: #2a9d8f;">📁 Load Whole Directory</button>
                 <button onclick="applyChanges()" class="btn-success">▶ Apply All Changes</button>
             </div>
             <div id="fileLocation" style="font-size: 0.8rem; color: #888888; font-family: monospace; padding-left: 2px;"></div>
@@ -253,8 +285,9 @@
         </div>
         
         <div class="right-panel">
+            <div id="dirFilesPane" class="dir-files-pane"></div>
             <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 5px;">
-                <label style="color: #9cdcfe;">File Preview (Read Only)</label>
+                <label style="color: #9cdcfe;" id="previewTitle">File Preview (Read Only)</label>
                 <div style="display: flex; gap: 10px;">
                     <button onclick="downloadFile()" id="downloadBtn" class="paste-btn" style="display: none; background-color: #d1691f; margin:0; width: auto; padding: 4px 12px; font-size: 0.8rem; font-weight: bold;">⬇ Save File to Same Folder</button>
                     <button onclick="copyWholeFile()" class="paste-btn" style="background-color: var(--accent-color); margin:0; width: auto; padding: 4px 12px; font-size: 0.8rem; font-weight: bold;">📋 Copy Entire File</button>
@@ -279,6 +312,9 @@
         let originalFileName = "updated_file.txt";
         let blockCount = 0;
         let currentFileHandle = null; 
+        let isDirectoryMode = false;
+        let loadedDirectoryFiles = []; // Array of { path, name, content, handle, modified }
+        let selectedFileIndex = -1;
         
         // Distinct colors for each chunk
         const chunkColors = ['#007acc', '#d1691f', '#2a9d8f', '#e76f51', '#9b5de5', '#f15bb5', '#00bbf9', '#00f5d4'];
@@ -293,22 +329,112 @@
             }[tag] || tag));
         }
 
-        // Load file via Button Click
+        // Load single file via Button Click
         async function loadFile() {
             try {
                 const [fileHandle] = await window.showOpenFilePicker();
                 currentFileHandle = fileHandle; 
+                isDirectoryMode = false;
+                loadedDirectoryFiles = [];
+                document.getElementById('dirFilesPane').style.display = 'none';
+                
                 const file = await fileHandle.getFile();
                 originalFileName = file.name;
                 fileContent = normalizeText(await file.text());
                 
+                document.getElementById('previewTitle').innerText = `File Preview: ${originalFileName}`;
                 document.getElementById('fileLocation').innerText = `Location: (Local File) / ${originalFileName}`;
                 updateHighlights(); 
-                logMsg(`Loaded file: ${originalFileName} (${fileContent.split('\n').length} lines)`, 'log-success');
+                logMsg(`Loaded single file: ${originalFileName} (${fileContent.split('\n').length} lines)`, 'log-success');
                 document.getElementById('downloadBtn').style.display = 'inline-block';
+                document.getElementById('downloadBtn').innerText = '⬇ Save File to Same Folder';
             } catch (err) {
                 if (err.name !== 'AbortError') logMsg('Error loading file.', 'log-error');
             }
+        }
+
+        // Recursive directory scanner
+        async function scanDirectoryRecursive(dirHandle, currentPath = "") {
+            const skipDirs = new Set(['.git', 'node_modules', '.vscode', '.venv', '__pycache__', 'dist', 'build']);
+            for await (const entry of dirHandle.values()) {
+                if (entry.kind === 'directory') {
+                    if (!skipDirs.has(entry.name)) {
+                        await scanDirectoryRecursive(entry, `${currentPath}${entry.name}/`);
+                    }
+                } else if (entry.kind === 'file') {
+                    try {
+                        const file = await entry.getFile();
+                        // Filter for common text/code extensions or small files
+                        const text = await file.text();
+                        loadedDirectoryFiles.push({
+                            path: `${currentPath}${entry.name}`,
+                            name: entry.name,
+                            content: normalizeText(text),
+                            handle: entry,
+                            modified: false
+                        });
+                    } catch (e) {
+                        // Skip binary or unreadable files
+                    }
+                }
+            }
+        }
+
+        // Load entire directory
+        async function loadDirectory() {
+            try {
+                const dirHandle = await window.showDirectoryPicker();
+                loadedDirectoryFiles = [];
+                isDirectoryMode = true;
+                currentFileHandle = dirHandle;
+                
+                logMsg(`Scanning directory: ${dirHandle.name}...`);
+                await scanDirectoryRecursive(dirHandle, "");
+                
+                document.getElementById('fileLocation').innerText = `Directory: ${dirHandle.name} (${loadedDirectoryFiles.length} text files indexed)`;
+                logMsg(`Loaded directory "${dirHandle.name}": indexed ${loadedDirectoryFiles.length} readable files.`, 'log-success');
+                
+                if (loadedDirectoryFiles.length > 0) {
+                    selectDirectoryFile(0);
+                    renderDirectoryFilesList();
+                    document.getElementById('downloadBtn').style.display = 'inline-block';
+                    document.getElementById('downloadBtn').innerText = '⬇ Save All Modified Files';
+                }
+            } catch (err) {
+                if (err.name !== 'AbortError') logMsg('Error loading directory.', 'log-error');
+            }
+        }
+
+        function selectDirectoryFile(index) {
+            if (index < 0 || index >= loadedDirectoryFiles.length) return;
+            selectedFileIndex = index;
+            const fileItem = loadedDirectoryFiles[index];
+            fileContent = fileItem.content;
+            originalFileName = fileItem.name;
+            document.getElementById('previewTitle').innerText = `File Preview: ${fileItem.path}`;
+            document.getElementById('fileLocation').innerText = `Location: ${fileItem.path}`;
+            updateHighlights();
+            renderDirectoryFilesList();
+        }
+
+        function renderDirectoryFilesList() {
+            const pane = document.getElementById('dirFilesPane');
+            if (!isDirectoryMode || loadedDirectoryFiles.length === 0) {
+                pane.style.display = 'none';
+                return;
+            }
+            pane.style.display = 'flex';
+            pane.innerHTML = '';
+            
+            loadedDirectoryFiles.forEach((fileItem, idx) => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = `dir-file-item ${idx === selectedFileIndex ? 'active' : ''}`;
+                itemDiv.onclick = () => selectDirectoryFile(idx);
+                
+                const modTag = fileItem.modified ? `<span style="color: var(--success-color); font-weight: bold;">[Modified]</span>` : `<span style="color: #666;">[Unchanged]</span>`;
+                itemDiv.innerHTML = `<span>📄 ${escapeHTML(fileItem.path)}</span> ${modTag}`;
+                pane.appendChild(itemDiv);
+            });
         }
 
         // Add a new Search/Replace Block 
@@ -546,85 +672,125 @@
             updateHighlights(); 
         }
 
-        // Apply all changes sequentially
+        // Apply all changes sequentially (supports single file and full directory)
         function applyChanges() {
-            if (!fileContent) {
-                alert("Please upload a file first!");
+            if (!isDirectoryMode && !fileContent) {
+                alert("Please upload a file or directory first!");
                 return;
             }
 
-            let updatedContent = fileContent;
-            const blocks = document.querySelectorAll('.replacement-block');
-            let successCount = 0;
-            let failCount = 0;
-            let ignoreCount = 0;
-            
+            const blocks = Array.from(document.querySelectorAll('.replacement-block')).map(block => ({
+                findText: normalizeText(block.querySelector('.find-text').value),
+                replaceText: normalizeText(block.querySelector('.replace-text').value),
+                statusDiv: block.querySelector('.block-status')
+            }));
+
             clearLog();
             logMsg("Applying changes...");
 
-            blocks.forEach((block, index) => {
-                const findText = normalizeText(block.querySelector('.find-text').value);
-                const replaceText = normalizeText(block.querySelector('.replace-text').value);
-                const statusDiv = block.querySelector('.block-status');
+            if (!isDirectoryMode) {
+                let updatedContent = fileContent;
+                let successCount = 0;
+                let failCount = 0;
 
-                if (!findText && !replaceText) {
-                    statusDiv.innerHTML = `<span style="color: #888888;">Ignored: Chunk is empty.</span>`;
-                    logMsg(`Chunk #${index + 1} is empty, ignored.`);
-                    ignoreCount++;
-                    return;
+                blocks.forEach((b, index) => {
+                    if (!b.findText && !b.replaceText) {
+                        b.statusDiv.innerHTML = `<span style="color: #888888;">Ignored: Chunk is empty.</span>`;
+                        return;
+                    }
+                    if (!b.findText) {
+                        b.statusDiv.innerHTML = `<span class="log-error">Skipped: Find field empty.</span>`;
+                        failCount++;
+                        return;
+                    }
+                    if (updatedContent.includes(b.findText)) {
+                        updatedContent = updatedContent.split(b.findText).join(b.replaceText);
+                        b.statusDiv.innerHTML = `<span class="log-success">✓ Successfully replaced in file.</span>`;
+                        successCount++;
+                        logMsg(`Chunk #${index + 1}: Replaced in ${originalFileName}`, 'log-success');
+                    } else {
+                        b.statusDiv.innerHTML = `<span class="log-error">✗ Not found in file.</span>`;
+                        failCount++;
+                    }
+                });
+
+                fileContent = updatedContent;
+                updateHighlights();
+                logMsg(`Finished: ${successCount} applied, ${failCount} failed.`);
+            } else {
+                let totalFilesModified = 0;
+                let totalReplacements = 0;
+
+                loadedDirectoryFiles.forEach(fileItem => {
+                    let text = fileItem.content;
+                    let fileChanged = false;
+
+                    blocks.forEach((b, index) => {
+                        if (b.findText && text.includes(b.findText)) {
+                            text = text.split(b.findText).join(b.replaceText);
+                            fileChanged = true;
+                            totalReplacements++;
+                            logMsg(`Chunk #${index + 1} matched in: ${fileItem.path}`, 'log-success');
+                        }
+                    });
+
+                    if (fileChanged) {
+                        fileItem.content = text;
+                        fileItem.modified = true;
+                        totalFilesModified++;
+                    }
+                });
+
+                if (selectedFileIndex >= 0) {
+                    fileContent = loadedDirectoryFiles[selectedFileIndex].content;
+                    updateHighlights();
                 }
-
-                if (!findText) {
-                    statusDiv.innerHTML = `<span class="log-error">Skipped: Find field is empty.</span>`;
-                    failCount++;
-                    logMsg(`Chunk #${index + 1}: Find field empty, but replace has text!`, 'log-error');
-                    return;
-                }
-
-                if (updatedContent.includes(findText)) {
-                    updatedContent = updatedContent.split(findText).join(replaceText);
-                    statusDiv.innerHTML = `<span class="log-success">✓ Successfully replaced in file.</span>`;
-                    successCount++;
-                    logMsg(`Chunk #${index + 1}: Replaced successfully.`, 'log-success');
-                } else {
-                    statusDiv.innerHTML = `<span class="log-error">✗ Not found in file. Check for extra spaces or missing lines.</span>`;
-                    failCount++;
-                    logMsg(`Chunk #${index + 1}: Search string not found!`, 'log-error');
-                }
-            });
-
-            fileContent = updatedContent;
-            updateHighlights();
-            logMsg(`Finished: ${successCount} applied, ${failCount} failed, ${ignoreCount} ignored.`);
+                renderDirectoryFilesList();
+                logMsg(`Directory scan complete: ${totalReplacements} changes made across ${totalFilesModified} files.`, 'log-success');
+            }
         }
 
-        // Download or Overwrite the modified file using File System Access API
+        // Download or Overwrite modified files (single or batch directory save)
         async function downloadFile() {
-            if (!fileContent) return;
-            
-            try {
-                const options = {
-                    suggestedName: originalFileName,
-                };
-                if (currentFileHandle) {
-                    options.startIn = currentFileHandle;
+            if (!isDirectoryMode) {
+                if (!fileContent) return;
+                try {
+                    const options = { suggestedName: originalFileName };
+                    if (currentFileHandle) options.startIn = currentFileHandle;
+                    const handle = await window.showSaveFilePicker(options);
+                    const writable = await handle.createWritable();
+                    await writable.write(fileContent);
+                    await writable.close();
+                    logMsg('File saved exactly in directory!', 'log-success');
+                } catch (err) {
+                    if (err.name !== 'AbortError') {
+                        const blob = new Blob([fileContent], { type: "text/plain" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = originalFileName; 
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    }
                 }
-                const handle = await window.showSaveFilePicker(options);
-                const writable = await handle.createWritable();
-                await writable.write(fileContent);
-                await writable.close();
-                logMsg('File saved exactly in directory!', 'log-success');
-            } catch (err) {
-                if (err.name !== 'AbortError') {
-                    const blob = new Blob([fileContent], { type: "text/plain" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = originalFileName; 
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
+            } else {
+                const modifiedFiles = loadedDirectoryFiles.filter(f => f.modified);
+                if (modifiedFiles.length === 0) {
+                    alert("No modified files in directory to save.");
+                    return;
+                }
+                try {
+                    for (const fileItem of modifiedFiles) {
+                        const writable = await fileItem.handle.createWritable();
+                        await writable.write(fileItem.content);
+                        await writable.close();
+                        logMsg(`Saved: ${fileItem.path}`, 'log-success');
+                    }
+                    logMsg(`Successfully wrote all ${modifiedFiles.length} modified files to disk!`, 'log-success');
+                } catch (err) {
+                    logMsg(`Error saving directory files: ${err.message}`, 'log-error');
                 }
             }
         }
