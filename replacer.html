@@ -426,13 +426,33 @@
             pane.style.display = 'flex';
             pane.innerHTML = '';
             
+            // Gather all active find blocks to generate colored markers
+            const activeBlocks = Array.from(document.querySelectorAll('.replacement-block')).map(b => ({
+                text: normalizeText(b.querySelector('.find-text').value),
+                color: b.dataset.color
+            })).filter(b => b.text.trim().length > 0);
+            
             loadedDirectoryFiles.forEach((fileItem, idx) => {
                 const itemDiv = document.createElement('div');
                 itemDiv.className = `dir-file-item ${idx === selectedFileIndex ? 'active' : ''}`;
                 itemDiv.onclick = () => selectDirectoryFile(idx);
                 
+                // Build marker dots for this file if it contains the find code
+                let markersHtml = '';
+                activeBlocks.forEach(b => {
+                    if (fileItem.content.includes(b.text)) {
+                        markersHtml += `<span style="display:inline-block; width:10px; height:4px; border-radius:2px; background-color:${b.color}; margin-left:6px; box-shadow: 0 0 2px rgba(0,0,0,0.5);" title="Contains matching chunk"></span>`;
+                    }
+                });
+                
                 const modTag = fileItem.modified ? `<span style="color: var(--success-color); font-weight: bold;">[Modified]</span>` : `<span style="color: #666;">[Unchanged]</span>`;
-                itemDiv.innerHTML = `<span>📄 ${escapeHTML(fileItem.path)}</span> ${modTag}`;
+                itemDiv.innerHTML = `
+                    <div style="display:flex; align-items:center;">
+                        <span>📄 ${escapeHTML(fileItem.path)}</span>
+                        <div style="display:flex; align-items:center; margin-left:6px;">${markersHtml}</div>
+                    </div>
+                    ${modTag}
+                `;
                 pane.appendChild(itemDiv);
             });
         }
@@ -610,6 +630,11 @@
                 replacePasteBtn.style.backgroundColor = '#333333';
                 replacePasteBtn.style.color = '#888888';
                 replacePasteBtn.style.opacity = "0.5";
+            }
+
+            // Instantly re-render directory files list to update the color markers across files
+            if (isDirectoryMode) {
+                renderDirectoryFilesList();
             }
         }
 
